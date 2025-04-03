@@ -93,6 +93,7 @@ try {
          isPR: isPR,
          pr_commentID: pr_commentID,
          fail_build: fail_build,
+         closeIssues: core.getBooleanInput('close-issues'),
          debug: debug
         }
     )
