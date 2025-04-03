@@ -52,6 +52,18 @@ source-base-path-2: "^WEB-INF:src/main/webapp/WEB-INF"
 | Default value | `""` |
 --- | ---   
 
+### `close-issues`
+
+**Optional** If set to `true`, this option will close all GitHub issues that were not found in the latest scan results. This helps keep the repository's issues in sync with the current state of the Veracode scan.
+
+| Default value | `"false"` |
+--- | ---
+
+Example:
+```yml
+close-issues: true
+```
+
 ---
 
 ## Permissions

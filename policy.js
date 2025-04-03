@@ -9,6 +9,7 @@ const addVeracodeIssueComment = require('./issue_comment').addVeracodeIssueComme
 const core = require('@actions/core');
 const fs = require('fs');
 const path = require('path');
+const util = require('./util');
 
 // sparse array, element = true if the flaw exists, undefined otherwise
 var existingFlaws = [];
@@ -127,12 +128,41 @@ function getIssueState(vid) {
     return existingIssueState[parseInt(parseVeracodeFlawID(vid).flawNum)]
 }
 
+async function closeIssuesNotInScan(options, processedFlawIDs) {
+    const githubOwner = options.githubOwner;
+    const githubRepo = options.githubRepo;
+    const githubToken = options.githubToken;
 
+    const authToken = 'token ' + githubToken;
+
+    console.log('Closing issues not found in the latest scan...');
+
+    for (const flawNum of Object.keys(existingFlaws).filter(flawNum => existingFlaws[flawNum] && !processedFlawIDs.has(flawNum))) {
+        const issueNumber = existingFlawNumber[flawNum];
+        console.log(`Closing issue #${issueNumber} for flaw ID ${flawNum}`);
+        try {
+            await request('PATCH /repos/{owner}/{repo}/issues/{issue_number}', {
+                headers: {
+                    authorization: authToken
+                },
+                owner: githubOwner,
+                repo: githubRepo,
+                issue_number: issueNumber,
+                state: 'closed'
+            });
+        } catch (error) {
+            if (error.status == 403 && error.message.indexOf('abuse detection') > 0) {
+                console.warn(`GitHub rate limiter tripped, ${error.message}`);
+                throw new ApiError('Rate Limiter tripped');
+            } else {
+                throw new Error(`Error closing issue #${issueNumber}: ${error.message}`);
+            }
+        }
+    }
+}
 
 async function processPolicyFlaws(options, flawData) {
-
-    const util = require('./util');
-
+    const processedFlawIDs = new Set();
     const waitTime = parseInt(options.waitTime);
 
     // get a list of all open VeracodeSecurity issues in the repo
@@ -144,6 +174,11 @@ async function processPolicyFlaws(options, flawData) {
     for( index=0; index < flawData._embedded.findings.length; index++) {
         let flaw = flawData._embedded.findings[index];
         let vid = createVeracodeFlawID(flaw);
+
+        // This set keeps track of all flaws processed in the current scan, ensuring that we can later identify
+        // and close any existing GitHub issues for flaws that are no longer present in the latest scan results.
+        processedFlawIDs.add(parseVeracodeFlawID(vid).flawNum);
+
         let issue_number = getIssueNumber(vid)
         let issueState = getIssueState(vid)
         console.debug(`processing flaw ${flaw.issue_id}, VeracodeID: ${vid}`);
@@ -370,6 +405,10 @@ old rewrite path */
         // rate limiter, per GitHub: https://docs.github.com/en/rest/guides/best-practices-for-integrators
         if(waitTime > 0)
             await util.sleep(waitTime * 1000);
+    }
+
+    if (options.closeIssues === 'true') {
+        await closeIssuesNotInScan(options, processedFlawIDs);
     }
 
     return index;
